@@ -16,7 +16,7 @@ const IDENTITY = [[1,0,0],[0,1,0],[0,0,1]];
 
 /* ---- INPUT 칸 제목 (왼쪽부터 순서대로, 행렬의 열 순서와 같음) ----
    아래는 예시 값입니다. 실제 제목으로 바꾸세요. 비워 두면([]) 1, 2, 3 번호가 표시됩니다. */
-const INPUT_LABELS = ["IN1", "IN2", "IN3"];
+const INPUT_LABELS = ["SION", "SR", "BOWL"];
 
 /* ---- OUTPUT 칸 제목 (위에서부터 순서대로, 행 순서와 같음) ---- */
 const OUTPUT_LABELS = ["CD", "DEPTH", "LSI"];
