@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모자이크 계산기</title>
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --text: #1f2937; --muted: #6b7280;
+    --border: #d1d5db; --pos: #dc2626; --neg: #2563eb; --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111827; --card: #1f2937; --text: #f3f4f6; --muted: #9ca3af;
+            --border: #4b5563; --pos: #f87171; --neg: #60a5fa; --accent: #60a5fa; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: var(--bg); color: var(--text);
+         font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .card { width: 100%; max-width: 420px; margin: 16px; padding: 20px; background: var(--card);
+          border: 1px solid var(--border); border-radius: 12px; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .row { display: grid; grid-template-columns: calc((100% - 16px) / 3) 1fr; gap: 8px; margin-bottom: 16px; }
+  .row label { min-width: 0; font-size: 13px; color: var(--muted); }
+  select, input { width: 100%; margin-top: 4px; padding: 8px; font-size: 16px; color: var(--text);
+                  background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .code { margin: -8px 0 4px; font-size: 14px; font-weight: 600; word-break: break-all; }
+  .code:empty { display: none; }
+  .olabel { margin-bottom: 4px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+  #inputs input { text-align: center; margin-top: 0; }
+  h2 { font-size: 13px; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
+  .grid { display: grid; gap: 8px; }
+  .out { padding: 8px; text-align: center; font-size: 16px; font-weight: 600;
+         border: 1px solid var(--border); border-radius: 8px; min-height: 40px;
+         font-variant-numeric: tabular-nums; }
+  .out.pos { color: var(--pos); }
+  .out.neg { color: var(--neg); }
+  .out.none { color: var(--muted); font-weight: 400; }
+  .hint { margin-top: 16px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>모자이크 계산기</h1>
+  <div class="row">
+    <label>STEP <select id="step"></select></label>
+    <label>BASE PPID <select id="ppid"></select></label>
+  </div>
+  <div class="row">
+    <label>CODE명 <select id="codeSel"></select></label>
+  </div>
+  <h2>INPUT</h2>
+  <div class="grid" id="inputs"></div>
+  <h2>OUTPUT</h2>
+  <div class="grid" id="outputs"></div>
+  <p class="hint" id="hint"></p>
+</main>
+
+<script src="matrices.js"></script>
+<script>
+/* "A, B": 행렬 처럼 쉼표로 묶은 PPID 이름을 각각 분리해서 같은 행렬을 연결 */
+function expandKeys(data) {
+  for (const step of Object.keys(data)) {
+    const expanded = {};
+    for (const [key, val] of Object.entries(data[step])) {
+      key.split(",").map(s => s.trim()).filter(Boolean).forEach(name => { expanded[name] = val; });
+    }
+    data[step] = expanded;
+  }
+}
+expandKeys(MATRICES);
+const IN_LABELS = (typeof INPUT_LABELS !== "undefined") ? INPUT_LABELS : [];
+const OUT_LABELS =(typeof OUTPUT_LABELS !== "undefined") ? OUTPUT_LABELS : [];
+const CODE_NAMES =(typeof CODES !== "undefined") ? CODES : {};
+expandKeys(CODE_NAMES);
+
+const $ = id => document.getElementById(id);
+const stepSel = $("step"), ppidSel = $("ppid"), codeSel = $("codeSel");
+let M = [];
+
+function fill(sel, keys) {
+  sel.innerHTML = "";
+  keys.forEach(k => sel.add(new Option(k, k)));
+}
+
+const codeOf = (step, ppid) => (CODE_NAMES[step] || {})[ppid] || "";
+
+/* STEP 안에서 쓰인 CODE명 목록 */
+function refreshCodeList() {
+  const codes = [...new Set(Object.values(CODE_NAMES[stepSel.value] || {}))];
+  fill(codeSel, codes);
+}
+
+/* STEP 안의 BASE PPID 전체 목록 */
+function refreshPpidList() {
+  fill(ppidSel, Object.keys(MATRICES[stepSel.value]));
+}
+
+/* CODE명 선택 → 해당 CODE의 BASE PPID 선택 (현재 PPID가 이미 그 CODE면 유지) */
+function selectPpidByCode() {
+  const step = stepSel.value, code = codeSel.value;
+  if (codeOf(step, ppidSel.value) === code) return;
+  const hit = Object.keys(MATRICES[step]).find(k => codeOf(step, k) === code);
+  if (hit) ppidSel.value = hit;
+}
+
+function build(syncCode = true) {
+  M = MATRICES[stepSel.value][ppidSel.value];
+  const cols = M[0].length, rows = M.length;
+  const inBox = $("inputs"), outBox = $("outputs");
+  inBox.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  outBox.style.gridTemplateColumns = `repeat(${rows}, 1fr)`;
+  inBox.innerHTML = "";
+  outBox.innerHTML = "";
+  for (let j = 0; j < cols; j++) {
+    const cell = document.createElement("div");
+    const lab = document.createElement("div");
+    lab.className = "olabel"; lab.textContent = IN_LABELS[j] || (j + 1);
+    const el = document.createElement("input");
+    el.type = "number"; el.step = "any"; el.inputMode = "decimal";
+    el.addEventListener("input", calc);
+    cell.append(lab, el);
+    inBox.appendChild(cell);
+  }
+  for (let i = 0; i < rows; i++) {
+    const cell = document.createElement("div");
+    const lab = document.createElement("div");
+    lab.className = "olabel"; lab.textContent = OUT_LABELS[i] || (i + 1);
+    const d = document.createElement("div");
+    d.className = "out none"; d.textContent = "-";
+    cell.append(lab, d);
+    outBox.appendChild(cell);
+  }
+  if (syncCode) codeSel.value = codeOf(stepSel.value, ppidSel.value); /* PPID 선택 → CODE 표시 */
+  $("hint").textContent = `${rows} × ${cols} 행렬 · 빈칸은 0으로 계산, 관련 INPUT이 모두 비면 -`;
+  calc();
+}
+
+function calc() {
+  const vals = [...$("inputs").querySelectorAll("input")].map(e => e.value.trim() === "" ? null : Number(e.value));
+  [...$("outputs").querySelectorAll(".out")].forEach((box, i) => {
+    let sum = 0, related = false;
+    M[i].forEach((c, j) => {
+      if (c !== 0 && vals[j] !== null) { related = true; sum += c * vals[j]; }
+    });
+    sum = Math.round(sum * 1e10) / 1e10; // 부동소수점 오차 제거
+    if (!related) { box.className = "out none"; box.textContent = "-"; }
+    else if (sum > 0) { box.className = "out pos"; box.textContent = "+" + sum; }
+    else if (sum < 0) { box.className = "out neg"; box.textContent = String(sum); }
+    else { box.className = "out"; box.textContent = "0"; }
+  });
+}
+
+fill(stepSel, Object.keys(MATRICES));
+stepSel.addEventListener("change", () => { refreshCodeList(); refreshPpidList(); build(); });
+codeSel.addEventListener("change", () => { selectPpidByCode(); build(false); }); /* CODE 선택 → PPID 선택 */
+ppidSel.addEventListener("change", () => build());
+refreshCodeList();
+refreshPpidList();
+build();
+</script>
+</body>
+</html>
